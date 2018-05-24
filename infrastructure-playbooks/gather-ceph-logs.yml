@@ -1,0 +1,28 @@
+- hosts:
+  - mons
+  - agents
+  - osds
+  - mdss
+  - rgws
+  - nfss
+  - restapis
+  - rbdmirrors
+  - clients
+  - mgrs
+  - iscsi-gws
+
+  gather_facts: false
+  become: yes
+
+  vars:
+    archive_path: /tmp
+
+  tasks:
+    - name: collect ceph logs
+      fetch:
+        src: "{{ item }}"
+        dest: "{{ archive_path }}"
+        fail_on_missing: no
+        flat: yes
+      with_fileglob:
+        - "/var/log/ceph*"
