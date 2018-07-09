@@ -1,6 +1,5 @@
 #!/usr/bin/python
 import datetime
-import json
 
 ANSIBLE_METADATA = {
     'metadata_version': '1.0',
@@ -36,7 +35,7 @@ options:
         description:
             - The action to take. Either creating OSDs or zapping devices.
         required: true
-        choices: ['create', 'zap']
+        choices: ['create', 'zap', 'prepare', 'activate']
         default: create
     data:
         description:
@@ -63,7 +62,7 @@ options:
         required: false
     db_vg:
         description:
-            - If db is a lv, this must be the name of the volume group it belongs to.
+            - If db is a lv, this must be the name of the volume group it belongs to.  # noqa E501
             - Only applicable if objectstore is 'bluestore'.
         required: false
     wal:
@@ -73,7 +72,7 @@ options:
         required: false
     wal_vg:
         description:
-            - If wal is a lv, this must be the name of the volume group it belongs to.
+            - If wal is a lv, this must be the name of the volume group it belongs to.  # noqa E501
             - Only applicable if objectstore is 'bluestore'.
         required: false
     crush_device_class:
@@ -84,7 +83,12 @@ options:
         description:
             - If set to True the OSD will be encrypted with dmcrypt.
         required: false
-
+    containerized:
+        description:
+            - Wether or not this is a containerized cluster. The value is
+            assigned or not depending on how the playbook runs.
+        required: false
+        default: None
 
 author:
     - Andrew Schoen (@andrewschoen)
@@ -97,23 +101,27 @@ EXAMPLES = '''
     data: data-lv
     data_vg: data-vg
     journal: /dev/sdc1
+    action: create
 
 - name: set up a bluestore osd with a raw device for data
   ceph_volume:
     objectstore: bluestore
     data: /dev/sdc
+    action: create
 
-- name: set up a bluestore osd with an lv for data and partitions for block.wal and block.db
+
+- name: set up a bluestore osd with an lv for data and partitions for block.wal and block.db  # noqa E501
   ceph_volume:
     objectstore: bluestore
     data: data-lv
     data_vg: data-vg
     db: /dev/sdc1
     wal: /dev/sdc2
+    action: create
 '''
 
 
-from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.basic import AnsibleModule  # noqa 4502
 
 
 def get_data(data, data_vg):
@@ -140,7 +148,28 @@ def get_wal(wal, wal_vg):
     return wal
 
 
-def create_osd(module):
+def ceph_volume_cmd(subcommand, containerized, cluster=None):
+    cmd = ['ceph-volume']
+    if cluster:
+        cmd.extend(["--cluster", cluster])
+    cmd.append('lvm')
+    cmd.append(subcommand)
+
+    if containerized:
+        cmd = containerized.split() + cmd
+
+    return cmd
+
+
+def activate_osd(module, containerized=None):
+    subcommand = "activate"
+    cmd = ceph_volume_cmd(subcommand)
+    cmd.append("--all")
+
+    return True
+
+
+def prepare_osd(module):
     cluster = module.params['cluster']
     objectstore = module.params['objectstore']
     data = module.params['data']
@@ -153,16 +182,12 @@ def create_osd(module):
     wal_vg = module.params.get('wal_vg', None)
     crush_device_class = module.params.get('crush_device_class', None)
     dmcrypt = module.params['dmcrypt']
+    containerized = module.params.get('containerized', None)
+    subcommand = "prepare"
 
-    cmd = [
-        'ceph-volume',
-        '--cluster',
-        cluster,
-        'lvm',
-        'create',
-        '--%s' % objectstore,
-        '--data',
-    ]
+    cmd = ceph_volume_cmd(subcommand, containerized, cluster)
+    cmd.extend(["--%s" % objectstore])
+    cmd.append("--data")
 
     data = get_data(data, data_vg)
     cmd.append(data)
@@ -201,11 +226,17 @@ def create_osd(module):
 
     # check to see if osd already exists
     # FIXME: this does not work when data is a raw device
-    # support for 'lvm list' and raw devices was added with https://github.com/ceph/ceph/pull/20620 but
+    # support for 'lvm list' and raw devices
+    # was added with https://github.com/ceph/ceph/pull/20620 but
     # has not made it to a luminous release as of 12.2.4
-    rc, out, err = module.run_command(["ceph-volume", "lvm", "list", data], encoding=None)
+    ceph_volume_list_cmd = ["ceph-volume", "lvm", "list", data]
+    if containerized:
+        ceph_volume_list_cmd = containerized.split() + ceph_volume_list_cmd
+
+    rc, out, err = module.run_command(ceph_volume_list_cmd, encoding=None)
     if rc == 0:
-        result["stdout"] = "skipped, since {0} is already used for an osd".format(data)
+        result["stdout"] = "skipped, since {0} is already used for an osd".format(  # noqa E501
+            data)
         result['rc'] = 0
         module.exit_json(**result)
 
@@ -312,8 +343,10 @@ def zap_devices(module):
 def run_module():
     module_args = dict(
         cluster=dict(type='str', required=False, default='ceph'),
-        objectstore=dict(type='str', required=False, choices=['bluestore', 'filestore'], default='bluestore'),
-        action=dict(type='str', required=False, choices=['create', 'zap'], default='create'),
+        objectstore=dict(type='str', required=False, choices=[
+                         'bluestore', 'filestore'], default='bluestore'),
+        action=dict(type='str', required=False, choices=[
+                    'create', 'zap', 'prepare', 'activate'], default='create'),
         data=dict(type='str', required=True),
         data_vg=dict(type='str', required=False),
         journal=dict(type='str', required=False),
@@ -324,6 +357,7 @@ def run_module():
         wal_vg=dict(type='str', required=False),
         crush_device_class=dict(type='str', required=False),
         dmcrypt=dict(type='bool', required=False, default=False),
+        containerized=dict(type='str', required=False, default=False),
     )
 
     module = AnsibleModule(
@@ -334,11 +368,17 @@ def run_module():
     action = module.params['action']
 
     if action == "create":
-        create_osd(module)
+        prepare_osd(module)
+        activate_osd(module)
+    elif action == "prepare":
+        prepare_osd(module)
+    elif action == "activate":
+        activate_osd(module)
     elif action == "zap":
         zap_devices(module)
 
-    module.fail_json(msg='State must either be "present" or "absent".', changed=False, rc=1)
+    module.fail_json(
+        msg='State must either be "present" or "absent".', changed=False, rc=1)
 
 
 def main():

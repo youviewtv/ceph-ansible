@@ -54,7 +54,6 @@
   include: scenarios/lvm.yml
   when:
     - osd_scenario == 'lvm'
-    - not containerized_deployment
   # Hard code this so we will skip the entire file instead of individual tasks (Default isn't Consistent)
   static: False
 
