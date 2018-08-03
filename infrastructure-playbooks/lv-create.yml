@@ -18,34 +18,34 @@
   - name: add nvme device as LVM PV
     lvg:
       force: yes
-      pvs: "{{nvme_device}}"
+      pvs: "{{ nvme_device }}"
       pesize: 4
       state: present
-      vg: "{{nvme_vg_name}}"
+      vg: "{{ nvme_vg_name }}"
 
   - name: create LVs for FS journals for the bucket index on the NVMe device
     lvol:
-      lv: "{{item.journal_name}}"
-      vg: "{{nvme_vg_name}}"
-      size: "{{journal_size}}"
-      pvs: "{{nvme_device}}"
+      lv: "{{ item.journal_name }}"
+      vg: "{{ nvme_vg_name }}"
+      size: "{{ journal_size }}"
+      pvs: "{{ nvme_device }}"
     with_items:
       - "{{ nvme_device_lvs }}"
 
   - name: create LVs for FS journals for hdd devices
     lvol:
       lv: "{{ hdd_journal_prefix }}-{{ item.split('/')[-1] }}"
-      vg: "{{nvme_vg_name}}"
-      size: "{{journal_size}}"
+      vg: "{{ nvme_vg_name }}"
+      size: "{{ journal_size }}"
     with_items:
       - "{{ hdd_devices }}"
 
   - name: create the LV for data portion of the bucket index on the NVMe device
     lvol:
-      lv: "{{item.lv_name}}"
-      vg: "{{nvme_vg_name}}"
-      size: "{{item.size}}"
-      pvs: "{{nvme_device}}"
+      lv: "{{ item.lv_name }}"
+      vg: "{{ nvme_vg_name }}"
+      size: "{{ item.size }}"
+      pvs: "{{ nvme_device }}"
     with_items:
       - "{{ nvme_device_lvs }}"
 
@@ -53,7 +53,7 @@
   - name: create VGs for all hdd devices
     lvg:
       force: yes
-      pvs: "{{item}}"
+      pvs: "{{ item }}"
       pesize: 4
       state: present
       vg: "{{ hdd_vg_prefix }}-{{ item.split('/')[-1] }}"
@@ -63,8 +63,8 @@
   - name: create LVs for the data portion on hdd devices
     lvol:
       lv: "{{ hdd_lv_prefix }}-{{ item.split('/')[-1] }}"
-      vg: "{{hdd_vg_prefix}}-{{ item.split('/')[-1] }}"
-      size: "{{hdd_lv_size}}"
+      vg: "{{ hdd_vg_prefix }}-{{ item.split('/')[-1] }}"
+      size: "{{ hdd_lv_size }}"
       pvs: "{{ item }}"
     with_items:
       - "{{ hdd_devices }}"
