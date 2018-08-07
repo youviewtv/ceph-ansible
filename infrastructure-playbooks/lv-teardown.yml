@@ -34,11 +34,11 @@
     register: old_osd_filesystems
 
   - name: tear down any existing OSD filesystems
-    shell: "umount -v {{ item }}"
+    command: "umount -v {{ item }}"
     with_items: "{{ old_osd_filesystems.stdout_lines }}"
 
   - name: kill all LVM commands that may have been hung
-    shell: "killall -q lvcreate pvcreate vgcreate lvconvert || echo -n"
+    command: "killall -q lvcreate pvcreate vgcreate lvconvert || echo -n"
     failed_when: false
 
   ## Logcal Vols
@@ -95,9 +95,9 @@
 
   ## Physical Vols
   - name: tear down PV for nvme device
-    shell: "pvremove --force --yes {{ nvme_device }}"
+    command: "pvremove --force --yes {{ nvme_device }}"
 
   - name: tear down PV for each hdd device
-    shell: "pvremove --force --yes {{ item }}"
+    command: "pvremove --force --yes {{ item }}"
     with_items:
       - "{{ hdd_devices }}"
